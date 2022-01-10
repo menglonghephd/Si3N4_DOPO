@@ -1,0 +1,86 @@
+import numpy as np
+from numba import jit
+import pandas as pd
+import matplotlib.pyplot as plt
+
+c = 3e10                             # Speed of light in cm / s
+gamma = 2.4e-15                      # cm/W
+ng = 1.85                            # Refractive index of Silicon at 1.55um. 
+vg = c/ng                            # Group velocity
+C = 760                                
+mass = 3190  
+theta = 0.01                         # Assuming a set % of power is coupled to ring from bus 
+Lambda_rp = 1550e-7                  # cm 1550 nm 
+wr = 2 * np.pi * c / Lambda_rp       # rad/s 1550 nm
+alpha_dB = 0.1  
+Radius = 200e-4                       # good choose for critical coupling 
+tR = (2 * np.pi * Radius) / vg
+dndt = 2.5e-5
+Veff= 7.25e-16
+Aeff = 1.15e-8
+tau_th = 1.354e-6
+delta_T = dndt*2*np.pi/(Lambda_rp)
+gamma = gamma*2*np.pi/Lambda_rp
+wr = 2 * np.pi * c / Lambda_rp  
+fsr = Lambda_rp**2/(ng*2*np.pi*Radius)*1e7
+
+def Linear_response(r1,alpha_dB1):
+    alpha1 = 10**(alpha_dB1/10)
+    return alpha1 - 1
+
+def photonlifetime(r2,theta2):
+    r2 = r2/1e4
+    tR   = (2 * np.pi * r2) / vg
+    L = 2*np.pi*r2
+    Loss = Linear_response(r2,alpha_dB)*L + theta2
+    return  tR/Loss
+
+loss = Linear_response(Radius,alpha_dB)*2*np.pi*Radius
+tau_ph = photonlifetime(Radius*1e4,theta)
+normal_in = np.sqrt((tR**2)/(8*gamma*vg*(tau_ph**3)*theta))
+normal_T  = 1/(2*delta_T*vg*tau_ph)
+norma_f = (2*gamma*vg*tau_ph)**(-0.5)
+s = 2*ng*loss/(C*mass*Veff)
+# x_s = s * (norma_f**2)/normal_T *tau_th * tau_ph * 2
+x_s=0
+
+def gain (Delta,S,k):
+    a3 = (x_s)**2 +(2*x_s) + 1
+    a2 = -((2*Delta)+(2*Delta*x_s)) 
+    a1 = (1+(Delta**2))
+    a0 = -S
+    p = [a3,a2,a1,a0]
+    Solution = np.roots(p)
+    solution1 = np.array( [ num for num in Solution if np.angle(num) == 0 ])
+    x = (solution1[0])
+    g = ((x**2) - ((Delta - x + (k**2))**2))**0.5
+    i = np.sign(g)
+    gain =(g-1)
+    return (gain)
+    #return (solution1[0])
+
+k = np.linspace(-2, 2,100)
+power = np.linspace(0, 50,100)
+Z1 = np.zeros((len(k),len(power)))
+
+for i in range(0,len(power)):
+    for j in range(0,len(k)):
+        Z1[i][j] = gain(3,power[i],k[j])
+
+# for i in range(0,len(detuning)):
+#     detuning[i] = (1550e-7 - 2*np.pi*c/(wr - (detuning[i] / (2*tau_ph))))*1e7
+
+for i in range(0,len(power)):
+    power[i] = power[i]*(normal_in**2)*Aeff*100*1000
+    
+X, Y = np.meshgrid(k, power)
+levels = 10
+cmap= plt.cm.get_cmap("coolwarm", levels+1)
+plt.contourf(X, Y, Z1, levels, alpha=.9,cmap=cmap)
+plt.ylabel(r"Pump power (mW)")
+plt.xlabel(r"Wavenumber k")
+plt.colorbar()
+plt.title(r"Parametric gain")
+plt.savefig("100noT_01.png",dpi=1000)
+
+    
